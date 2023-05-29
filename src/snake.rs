@@ -1,17 +1,24 @@
-use crate::print;
-use crate::vga_buffer::BUFFER_HEIGHT;
+use crate::interrupts::LASTPRESSED;
+use crate::vga_buffer::WRITER;
+use crate::{print, println};
 use core::mem::MaybeUninit;
 use fixed_slice_vec::FixedSliceVec;
+use pc_keyboard::DecodedKey;
+use rand::rngs::SmallRng;
+use rand::RngCore;
+use rand::SeedableRng;
 
 pub fn run() {
     // create game consts
-    // const TIME_PER_TILE: time::Duration = time::Duration::from_millis(200);
+    const TIME_PER_TILE: u128 = 10_000_000;
     const GAME_LENGTH: i32 = 20;
     const GAME_HEIGHT: i32 = 10;
     const STARTING_SNAKE: i32 = 4;
 
-    let mut bytes: [MaybeUninit<u8>; 200] = unsafe { MaybeUninit::uninit().assume_init() };
-    let byte_slice = &mut bytes[..200];
+    let mut small_rng = SmallRng::seed_from_u64(23625234);
+
+    let mut bytes: [MaybeUninit<u8>; 1000] = unsafe { MaybeUninit::uninit().assume_init() };
+    let byte_slice = &mut bytes[..1000];
     let mut snake_vec: FixedSliceVec<SnakeNode> = FixedSliceVec::from_uninit_bytes(byte_slice);
 
     // creates vector of snake nodes and pushes starting snake nodes
@@ -24,10 +31,10 @@ pub fn run() {
 
     // variables :0
     let display_arr: [[char; GAME_LENGTH as usize]; GAME_HEIGHT as usize] =
-        [['~'; GAME_LENGTH as usize]; GAME_HEIGHT as usize];
+        [['.'; GAME_LENGTH as usize]; GAME_HEIGHT as usize];
     let mut money = Money {
-        x: GAME_LENGTH - 1,
-        y: GAME_HEIGHT / 2,
+        x: (GAME_LENGTH - 1) as u32,
+        y: (GAME_HEIGHT / 2) as u32,
     };
     let mut direction = Direction::Right;
     let mut eating = false;
@@ -37,11 +44,38 @@ pub fn run() {
     let byte_slice = &mut bytes[..50];
     let mut input_vec: FixedSliceVec<Direction> = FixedSliceVec::from_uninit_bytes(byte_slice);
 
+    let mut bytes: [MaybeUninit<u8>; 200] = unsafe { MaybeUninit::uninit().assume_init() };
+    let byte_slice = &mut bytes[..200];
+    let mut food_vec: FixedSliceVec<(u32, u32)> = FixedSliceVec::from_uninit_bytes(byte_slice);
+
+    while !food_vec.is_full() {
+        println!("calculating...");
+        let mut new_x = small_rng.next_u32();
+        while new_x >= GAME_LENGTH as u32 {
+            new_x /= 2;
+        }
+        let mut new_y = small_rng.next_u32();
+        while new_y >= GAME_HEIGHT as u32 {
+            new_y /= 2;
+        }
+        food_vec.push((new_x, new_y))
+    }
+
     // main game loop
     loop {
         // adds all the inputs to vector
         // this is to stop all the inputs from stacking and instead accepts the first input you
         // pressed in the 'time per tile'
+
+        if let DecodedKey::Unicode(val) = *LASTPRESSED.lock() {
+            match val {
+                'w' => input_vec.push(Direction::Up),
+                'a' => input_vec.push(Direction::Left),
+                's' => input_vec.push(Direction::Down),
+                'd' => input_vec.push(Direction::Right),
+                _ => (),
+            }
+        }
 
         if !input_vec.is_empty() {
             let new_direction = input_vec[0].clone();
@@ -72,9 +106,6 @@ pub fn run() {
                 x: snake_vec[0].x + 1,
                 y: snake_vec[0].y,
             },
-            _ => {
-                panic!("unexpected direction")
-            }
         };
 
         // if snake is exiting the borders or collides with itself then the snake dies
@@ -98,8 +129,6 @@ pub fn run() {
             // if snake eats then generate new food and eaiting = true
             if yum_yum(&snake_vec, &money) {
                 eating = true;
-                let mut new_x = 3;
-                let mut new_y = 10;
 
                 let mut bytes: [MaybeUninit<u8>; 250] =
                     unsafe { MaybeUninit::uninit().assume_init() };
@@ -110,56 +139,56 @@ pub fn run() {
                     .iter()
                     .for_each(|snake| values_vec.push((snake.x, snake.y)));
 
+                let (mut new_x, mut new_y) = food_vec.pop().expect("ran out of food");
                 while is_in_vec(&(new_x, new_y), &values_vec) {
-                    new_x = 9;
-                    new_y = 20;
+                    (new_x, new_y) = food_vec.pop().expect("ran out of food");
                 }
                 money = Money { x: new_x, y: new_y };
             }
         }
         // displays score and direction
-        print!("Score: {}\n", snake_vec.len() - 4);
+        println!("Score: {}", snake_vec.len() - 4);
         // creates array using function and adds the food yum yum!!!
         let print_out = &mut snake_to_display(&display_arr, &snake_vec);
         print_out[(money.y - 1) as usize][(money.x - 1) as usize] = '$';
 
         // displays top border
-        print!(
-            "{empty:->width$}",
-            empty = "",
-            width = (GAME_LENGTH + 2) as usize
-        );
+        println!("{empty:->width$}", empty = "", width = GAME_LENGTH as usize);
 
         // loops through the 2d array and collects each 1d arrray into a string and displays it
         for number in 1..=GAME_HEIGHT {
-            let num_1 = (number - 1) as usize;
-            print!("|{:?}|\n", print_out[num_1]);
+            print_out[(number - 1) as usize]
+                .iter()
+                .for_each(|c| print!("{}", c));
+            println!("");
         }
 
         // displays bottom border
-        print!(
-            "{empty:->width$}",
-            empty = "",
-            width = (GAME_LENGTH + 2) as usize
-        );
+        println!("{empty:->width$}", empty = "", width = GAME_LENGTH as usize);
 
         // sleeps for the time per tile
-        //thread::sleep(TIME_PER_TILE);
+
+        let start_time: u128 = 200;
+        let mut pretend_time: u128 = 200;
+        loop {
+            let val = pretend_time - start_time;
+            pretend_time += 1;
+            if val > TIME_PER_TILE {
+                break;
+            }
+        }
 
         // if the snake died then display "you died" then waits for one last character input before
         // breaking the loop
         if death {
-            print!("You Died");
+            println!("You Died");
             break;
         }
 
         // clears the screen for the next iteration of the loop
-        for _ in 0..=BUFFER_HEIGHT {
-            print!("\n");
-        }
+        WRITER.lock().clear();
     }
 }
-
 // defo don't need these as two structs but i thought it would make it look nicer
 struct SnakeNode {
     x: i32,
@@ -167,14 +196,14 @@ struct SnakeNode {
 }
 
 struct Money {
-    x: i32,
-    y: i32,
+    x: u32,
+    y: u32,
 }
 
 // this functions is for making sure the food doesn't spawin in the snake
-fn is_in_vec(values: &(i32, i32), vec: &FixedSliceVec<(i32, i32)>) -> bool {
+fn is_in_vec(values: &(u32, u32), vec: &FixedSliceVec<(i32, i32)>) -> bool {
     for vec_thing in vec.iter() {
-        if values == vec_thing {
+        if &(values.0 as i32, values.1 as i32) == vec_thing {
             return true;
         }
     }
@@ -222,7 +251,7 @@ fn does_snake_die(snake: &FixedSliceVec<SnakeNode>) -> bool {
 // if snake is colliding with food then YUM YUM!!!
 fn yum_yum(snake: &FixedSliceVec<SnakeNode>, money: &Money) -> bool {
     for node in snake.iter() {
-        if node.x == money.x && node.y == money.y {
+        if node.x == money.x as i32 && node.y == money.y as i32 {
             return true;
         }
     }
@@ -237,7 +266,6 @@ enum Direction {
     Down,
     Left,
     Right,
-    None,
 }
 
 impl Direction {
@@ -247,9 +275,6 @@ impl Direction {
             Direction::Down => Direction::Up,
             Direction::Left => Direction::Right,
             Direction::Right => Direction::Left,
-            _ => {
-                panic!("wtf")
-            }
         }
     }
 }

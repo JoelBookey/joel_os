@@ -10,7 +10,6 @@ use joel_os::println;
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     println!("hello");
-
     joel_os::init();
 
     #[cfg(test)]
@@ -23,7 +22,7 @@ pub extern "C" fn _start() -> ! {
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    println!("{}", info);
+    println!("{:?}", info);
     joel_os::hlt_loop();
 }
 
