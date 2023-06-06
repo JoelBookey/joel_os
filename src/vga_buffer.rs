@@ -97,6 +97,10 @@ impl Writer {
     }
 
     pub fn clear(&mut self) {
+        //let _ch = ScreenChar {
+        //    ascii_character: b' ',
+        //    colour_code: ColourCode::new(Colour::Yellow, Colour::Black),
+        //};
         for row in 0..BUFFER_HEIGHT {
             self.clear_row(row);
         }
@@ -133,14 +137,14 @@ impl fmt::Write for Writer {
 
 #[macro_export]
 macro_rules! print {
-        ($($arg:tt)*) => ($crate::vga_buffer::_print(format_args!($($arg)*)));
-    }
+    ($($arg:tt)*) => ($crate::vga_buffer::_print(format_args!($($arg)*)));
+}
 
 #[macro_export]
 macro_rules! println {
-        () => ($crate::print!("\n"));
-        ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
-    }
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
 
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {

@@ -6,6 +6,8 @@
 
 use core::panic::PanicInfo;
 use joel_os::println;
+use joel_os::program::program_handler;
+use joel_os::snake::SnakeGame;
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
@@ -14,7 +16,8 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(test)]
     test_main();
-    joel_os::snake::run();
+
+    program_handler(&mut SnakeGame).unwrap();
     joel_os::hlt_loop();
 }
 

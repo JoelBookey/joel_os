@@ -9,6 +9,7 @@ use core::panic::PanicInfo;
 
 pub mod gdt;
 pub mod interrupts;
+pub mod program;
 pub mod serial;
 pub mod snake;
 pub mod vga_buffer;

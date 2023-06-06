@@ -22,6 +22,7 @@ lazy_static! {
 }
 
 pub static LASTPRESSED: spin::Mutex<DecodedKey> = spin::Mutex::new(DecodedKey::Unicode('2'));
+pub static STOPWATCH: spin::Mutex<u128> = spin::Mutex::new(0);
 
 pub fn init_idt() {
     IDT.load();
@@ -65,6 +66,7 @@ extern "x86-interrupt" fn double_fault_handler(
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    *STOPWATCH.lock() += 1;
     unsafe {
         PICS.lock()
             .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
