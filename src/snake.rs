@@ -19,27 +19,26 @@ pub struct SnakeGame;
 
 impl Program for SnakeGame {
     fn run(&mut self) -> Result<(), &'static str> {
-        let mut small_rng = SmallRng::seed_from_u64(23625234);
-
-        let mut bytes: [MaybeUninit<u8>; 200] = unsafe { MaybeUninit::uninit().assume_init() };
-        let food_bytes_slice = &mut bytes[..200];
+        let mut bytes: [MaybeUninit<u8>; 250] = unsafe { MaybeUninit::uninit().assume_init() };
+        let food_bytes_slice = &mut bytes[..250];
         let mut food_vec: FixedSliceVec<(u8, u8)> =
             FixedSliceVec::from_uninit_bytes(food_bytes_slice);
 
+        let mut small_rng = SmallRng::seed_from_u64(23625234);
         while !food_vec.is_full() {
             println!("calculating...");
-            let mut new_x = small_rng.next_u32();
-            while new_x >= GAME_LENGTH as u32 {
-                new_x /= 2;
+            let mut new_x = (small_rng.next_u32() >> 24) as u8;
+            while new_x == 0 || new_x >= GAME_LENGTH {
+                new_x = (small_rng.next_u32() >> 24) as u8;
             }
-            let mut new_y = small_rng.next_u32();
-            while new_y >= GAME_HEIGHT as u32 {
-                new_y /= 2;
+            let mut new_y = (small_rng.next_u32() >> 24) as u8;
+            while new_y == 0 || new_y >= GAME_HEIGHT {
+                new_y = (small_rng.next_u32() >> 24) as u8;
             }
-            food_vec.push((new_x as u8, new_y as u8));
+            food_vec.push((new_x, new_y));
         }
-        let mut bytes: [MaybeUninit<u8>; 1000] = unsafe { MaybeUninit::uninit().assume_init() };
-        let byte_slice = &mut bytes[..1000];
+        let mut bytes: [MaybeUninit<u8>; 450] = unsafe { MaybeUninit::uninit().assume_init() };
+        let byte_slice = &mut bytes[..450];
         let mut snake_vec: FixedSliceVec<Point> = FixedSliceVec::from_uninit_bytes(byte_slice);
 
         // creates vector of snake nodes and pushes starting snake nodes
@@ -63,10 +62,6 @@ impl Program for SnakeGame {
 
         // main game loop
         loop {
-            // adds all the inputs to vector
-            // this is to stop all the inputs from stacking and instead accepts the first input you
-            // pressed in the 'time per tile'
-
             if let DecodedKey::Unicode(val) = *LASTPRESSED.lock() {
                 let new_direction = match val {
                     'w' => Direction::Up,
@@ -116,7 +111,9 @@ impl Program for SnakeGame {
                 } else {
                     snake_vec.pop();
                 }
-                snake_vec.insert(0, new_snake_node);
+                snake_vec
+                    .try_insert(0, new_snake_node)
+                    .expect("snake vec full");
 
                 // if snake eats then generate new food and eaiting = true
                 if yum_yum(&snake_vec, &money) {
@@ -139,8 +136,8 @@ impl Program for SnakeGame {
             println!("{empty:->width$}", empty = "", width = GAME_LENGTH as usize);
 
             // loops through the 2d array and collects each 1d arrray into a string and displays it
-            for number in 1..=GAME_HEIGHT {
-                print_out[(number - 1) as usize]
+            for number in 0..GAME_HEIGHT {
+                print_out[(number) as usize]
                     .iter()
                     .for_each(|c| print!("{}", c));
                 println!("");
@@ -152,13 +149,14 @@ impl Program for SnakeGame {
             // sleeps for the time per tile
             let start_time = *STOPWATCH.lock();
             loop {
-                let lock = STOPWATCH.try_lock();
-                if let Some(val) = lock {
+                if let Some(val) = STOPWATCH.try_lock() {
                     if *val - start_time >= TIME_PER_TILE as u128 {
                         break;
                     }
+                } else {
+                    println!("lock is locked");
                 }
-                for _ in 0..10000 {}
+                for _ in 0..100000 {}
             }
 
             // if the snake died then display "you died" then waits for one last character input before
@@ -175,7 +173,6 @@ impl Program for SnakeGame {
     }
 }
 
-// defo don't need these as two structs but i thought it would make it look nicer
 #[derive(PartialEq)]
 struct Point {
     x: u8,
@@ -194,9 +191,9 @@ fn is_in_vec(point: &Point, vec: &FixedSliceVec<Point>) -> bool {
 
 // clones display array then loops through the snake vector and replaces the respective '.' with '@' also the head of the snake values is saved so that at the end the head is a '&'
 fn snake_to_display(
-    display_arr: &[[char; 20]; 10],
+    display_arr: &[[char; GAME_LENGTH as usize]; GAME_HEIGHT as usize],
     snake_vec: &FixedSliceVec<Point>,
-) -> [[char; 20]; 10] {
+) -> [[char; GAME_LENGTH as usize]; GAME_HEIGHT as usize] {
     let mut new_arr = display_arr.clone();
     let mut first = true;
     let mut first_node: (usize, usize) = (69, 420);
@@ -215,8 +212,8 @@ fn snake_to_display(
 // a really over engineered way of making sure non of the values in the snake
 // vector are the same
 fn does_snake_die(snake: &FixedSliceVec<Point>) -> bool {
-    let mut bytes: [MaybeUninit<u8>; 250] = unsafe { MaybeUninit::uninit().assume_init() };
-    let bytes_silce = &mut bytes[..250];
+    let mut bytes: [MaybeUninit<u8>; 1000] = unsafe { MaybeUninit::uninit().assume_init() };
+    let bytes_silce = &mut bytes[..1000];
     let mut done_ur_mum: FixedSliceVec<&Point> = FixedSliceVec::from_uninit_bytes(bytes_silce);
     for node in snake.iter() {
         for value in done_ur_mum.iter() {
@@ -224,7 +221,9 @@ fn does_snake_die(snake: &FixedSliceVec<Point>) -> bool {
                 return true;
             }
         }
-        done_ur_mum.push(node);
+        done_ur_mum
+            .try_push(node)
+            .expect("the done_ur_mum vec is full");
     }
 
     return false;
